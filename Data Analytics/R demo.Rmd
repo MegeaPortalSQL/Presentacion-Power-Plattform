@@ -1,0 +1,136 @@
+##  in R Studio  run this 
+
+## library(sqlmlutils)
+## connection <- connectionInfo(
+##   server= "localhost",
+##   database = "Hepatitis Key Influencers")
+
+## sql_install.packages(connectionString = connection, pkgs = "caret", verbose = TRUE, scope = "PUBLIC")
+## sql_install.packages(connectionString = connection, pkgs = "ellipse", verbose = TRUE, scope = "PUBLIC")
+## sql_install.packages(connectionString = connection, pkgs = "e1071", verbose = TRUE, scope = "PUBLIC")
+##  sql_install.packages(connectionString = connection, pkgs = "randomForest", verbose = TRUE, scope = "PUBLIC")
+
+## USING Microsoft Framework from R Studio
+## You can show in Tools-> Options -> Rversion
+
+
+## Using popular Libraries
+
+Sys.setenv(TZ="Europe/Madrid")
+library(caret)
+library(ellipse)
+library(e1071)
+library(randomForest)
+## Read data from csv file
+
+## Ensure that you write the correct path to the file.
+SQL_Diabetes <- read.csv("hepatitisKnnImp.csv")
+
+
+## Important! Bit's or 0-1 values are numbers, but in our case the are boolean, for this reason we have to deal with
+## If you don't want to have Dummy variables then change as.factor por as.numeric, and deal with sex (factorizing, replacing and converting)
+
+SQL_Diabetes$FATIGUE <- as.factor(SQL_Diabetes$FATIGUE)
+SQL_Diabetes$STEROIDS <- as.factor(SQL_Diabetes$STEROIDS)
+SQL_Diabetes$ANTIVIRALS <- as.factor(SQL_Diabetes$ANTIVIRALS)
+SQL_Diabetes$FATIGUE <- as.factor(SQL_Diabetes$FATIGUE)
+SQL_Diabetes$MALAISE <- as.factor(SQL_Diabetes$MALAISE)
+SQL_Diabetes$ANOREXY <- as.factor(SQL_Diabetes$ANOREXY)
+SQL_Diabetes$HIGgrand <- as.factor(SQL_Diabetes$HIGgrand)
+SQL_Diabetes$HIGfirm <- as.factor(SQL_Diabetes$HIGfirm)
+SQL_Diabetes$BAZOpalpa <- as.factor(SQL_Diabetes$BAZOpalpa)
+SQL_Diabetes$ARANIASvasc <- as.factor(SQL_Diabetes$ARANIASvasc)
+SQL_Diabetes$ASCITESS <- as.factor(SQL_Diabetes$ASCITESS)
+SQL_Diabetes$VARICOSE <- as.factor(SQL_Diabetes$VARICOSE)
+SQL_Diabetes$HISTIOLOGY <- as.factor(SQL_Diabetes$HISTIOLOGY)
+
+
+## Show some graphical information about data
+
+featurePlot(x =SQL_Diabetes[, 1:4], y =SQL_Diabetes$FOREWORD, plot = "pairs",auto.key = list(columns = 2))
+
+
+
+a<-data.frame(SQL_Diabetes$PHOSPHATE,SQL_Diabetes$SGOT,SQL_Diabetes$ALBUMINE,SQL_Diabetes$PROTIME)
+names(a)<-c("PHOSPHATE","SGOT","ALBUMINE","PROTIME")
+featurePlot(x = a, y = SQL_Diabetes$FOREWORD, plot = "ellipse",auto.key = list(columns = 2))
+
+
+## Show correlation in PowerBI
+
+## Create Train and test partitions using CreateDataPartition function
+## In order to test how efficient it's our prediction
+##
+##   CreateDataPartition take care on distributions, it's not just selecting top N rows but look at the information
+##   and try to have all the types of records
+##
+
+## Establish seed to can repeat code with the same results!
+
+set.seed(342)
+
+## Recursive variable el 
+ctrl.rfe <- rfeControl(functions=rfFuncs,
+                       method = "cv",
+                       number = 10,
+                       returnResamp="final",
+                       verbose = TRUE)
+subsets <- c(3:19)
+rf.rfe <- rfe(FOREWORD~., data=SQL_Diabetes,
+              sizes=subsets,
+              rfeControl=ctrl.rfe)
+rf.rfe
+
+##Choosen variables
+
+a<- as.data.frame(rf.rfe$optVariables)
+
+names(a)<-c('Variable')
+
+a
+## Do averages..
+Death<-SQL_Diabetes[SQL_Diabetes$FOREWORD=="DEATH" ,]
+Lives<-SQL_Diabetes[SQL_Diabetes$FOREWORD=="LIVE" ,]
+
+Death
+## Deaths woman by diabetes
+
+nrow(Death[Death$SEX=="WOMEN",])/ nrow(Death[Death$SEX!="WOMEN",])
+
+#Deaths with age >28 
+
+nrow(Death[Death$AGE>=28,])/ nrow(Death[Death$AGE<28,])
+
+
+## Divide by % of deaths over total where fatigue is false 
+divideby <- nrow(Death[Death$FATIGUE==FALSE,]) / nrow(SQL_Diabetes[SQL_Diabetes$FATIGUE==FALSE,])
+divideby
+## by  % of Deaths where fatigue it's true
+todivide <- nrow(Death[Death$FATIGUE==TRUE,]) / nrow(SQL_Diabetes[SQL_Diabetes$FATIGUE==TRUE,])
+todivide
+
+todivide/divideby
+
+
+#Protime it's the most important variable. so 
+
+
+
+featurePlot(x = Lives$PROTIME, y = Lives$FOREWORD, plot = "box")
+
+featurePlot(x = Death$PROTIME, y = Death$FOREWORD, plot = "box")
+
+# we can see that Protime it's higher when Foreword it's live, except from some outliers
+
+mean(Death$PROTIME)
+
+## we will consider Protime up to 42
+
+nrow(Lives[Lives$PROTIME>42,])/ nrow(Lives[Lives$PROTIME<=42,])
+
+# it is 14.375 times more posibilites to live when protime it's bigger than 42
+
+
+nrow(Death[Death$PROTIME<=42,])/ nrow(Death[Death$PROTIME>42,])
+
+# it is 4.333 times more posibilites to death when protime it's lower than 42
