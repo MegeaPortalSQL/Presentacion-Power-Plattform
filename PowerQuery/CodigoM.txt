@@ -1,0 +1,78 @@
+////////////////Entry
+
+let
+    Source = Sql.Database("localhost", "nav_STG"),
+    stg_GLEntry = Source{[Schema="stg",Item="GLEntry"]}[Data],
+    #"Removed Other Columns" = Table.SelectColumns(stg_GLEntry,{"CompanyID", "Posting Date", "Document No_", "Description", "Amount", "Global Dimension 1 Code", "Global Dimension 2 Code", "Debit Amount", "Credit Amount", "Source No_", "G_L Account No_"}),
+    #"Removed Columns" = Table.RemoveColumns(#"Removed Other Columns",{"Source No_"}),
+    #"Filtered Rows" = Table.SelectRows(#"Removed Columns", each true),
+    #"Filtered Rows1" = Table.SelectRows(#"Filtered Rows", each [CompanyID] <> null and [CompanyID] <> ""),
+    #"Filtered Rows2" = Table.SelectRows(#"Filtered Rows1", each [CompanyID] = 1)
+in
+    #"Filtered Rows2"
+	
+	
+////////////////////Account
+	
+let
+    Source = Sql.Database("localhost", "nav_STG"),
+    stg_GLAccount = Source{[Schema="stg",Item="GLAccount"]}[Data],
+    #"Removed Columns" = Table.RemoveColumns(stg_GLAccount,{"timestamp"}),
+    #"Removed Other Columns" = Table.SelectColumns(#"Removed Columns",{"CompanyID", "Name", "Search Name", "Account Type", "Global Dimension 1 Code", "Global Dimension 2 Code",  "No_"}),
+    #"Filtered Rows" = Table.SelectRows(#"Removed Other Columns", each ([Account Type] = 0) and ([CompanyID] = 1)),
+    #"Renamed Columns" = Table.RenameColumns(#"Filtered Rows",{{"No_", "cta"}})
+in
+    #"Renamed Columns"	
+	
+////////////////////////////////ScheduleLine	
+	
+let
+    Source = Sql.Database("localhost", "nav_STG"),
+    stg_AccScheduleLine = Source{[Schema="stg",Item="AccScheduleLine"]}[Data],
+    #"Filtered Rows" = Table.SelectRows(stg_AccScheduleLine, each ([CompanyID] = 1)),
+    #"Removed Other Columns" = Table.SelectColumns(#"Filtered Rows",{"Schedule Name", "Line No_", "Row No_", "Description", "Totaling"}),
+    #"Changed Type" = Table.TransformColumnTypes(#"Removed Other Columns",{{"Line No_", type text}}),
+    #"Added Custom" = Table.AddColumn(#"Changed Type", "Key", each [Schedule Name] &"-"&[Line No_])
+in
+    #"Added Custom"
+
+//////////////////////////AuxPaso1	
+	let
+    Source = Sql.Database("localhost", "nav_stg", [Query="SELECT #(lf)      [Schedule Name]#(lf)      ,[Line No_]#(lf)      ,[Row No_]#(lf)      ,[Description]#(lf)      ,[Totaling Type]#(lf)      ,[Totaling]#(lf)#(lf)     #(lf)  FROM [stg].[AccScheduleLine]"]),
+    #"Filtered Rows" = Table.SelectRows(Source, each ([Schedule Name] = "BAL08-ABR")),
+    #"Replaced Value" = Table.ReplaceValue(#"Filtered Rows","+","|",Replacer.ReplaceText,{"Totaling"}),
+    #"Split Column by Delimiter" = Table.SplitColumn(#"Replaced Value", "Totaling", Splitter.SplitTextByDelimiter("|", QuoteStyle.Csv), {"Totaling.1", "Totaling.2", "Totaling.3", "Totaling.4", "Totaling.5", "Totaling.6", "Totaling.7", "Totaling.8", "Totaling.9", "Totaling.10", "Totaling.11", "Totaling.12", "Totaling.13", "Totaling.14", "Totaling.15", "Totaling.16", "Totaling.17", "Totaling.18", "Totaling.19", "Totaling.20", "Totaling.21", "Totaling.22", "Totaling.23", "Totaling.24", "Totaling.25", "Totaling.26", "Totaling.27", "Totaling.28", "Totaling.29", "Totaling.30", "Totaling.31"}),
+    #"Unpivoted Other Columns" = Table.UnpivotOtherColumns(#"Split Column by Delimiter", {"Schedule Name", "Line No_", "Row No_", "Description", "Totaling Type"}, "Attribute", "Value")
+in
+    #"Unpivoted Other Columns"
+
+//////////////////bridge
+	
+	let
+    Source = Sql.Database("localhost", "nav_stg", [Query="SELECT #(lf)      [Schedule Name]#(lf)      ,[Line No_]#(lf)      ,[Row No_]#(lf)      ,[Description]#(lf)      ,[Totaling Type]#(lf)      ,[Totaling]#(lf)#(lf)     #(lf)  FROM [NAV_stg].[stg].[AccScheduleLine]"]),
+    #"Replaced Value" = Table.ReplaceValue(Source,"+","|",Replacer.ReplaceText,{"Totaling"}),
+    #"Split Column by Delimiter" = Table.SplitColumn(#"Replaced Value", "Totaling", Splitter.SplitTextByDelimiter("|", QuoteStyle.Csv), {"Totaling.1", "Totaling.2", "Totaling.3", "Totaling.4", "Totaling.5", "Totaling.6", "Totaling.7", "Totaling.8", "Totaling.9", "Totaling.10", "Totaling.11", "Totaling.12", "Totaling.13", "Totaling.14", "Totaling.15", "Totaling.16", "Totaling.17", "Totaling.18", "Totaling.19", "Totaling.20", "Totaling.21", "Totaling.22", "Totaling.23", "Totaling.24", "Totaling.25", "Totaling.26", "Totaling.27", "Totaling.28", "Totaling.29", "Totaling.30", "Totaling.31"}),
+    #"Unpivoted Other Columns" = Table.UnpivotOtherColumns(#"Split Column by Delimiter", {"Schedule Name", "Line No_", "Row No_", "Description", "Totaling Type"}, "Attribute", "Value"),
+    #"Merged Queries" = Table.NestedJoin(#"Unpivoted Other Columns", {"Value"}, AuxPaso1, {"Row No_"}, "AuxPaso1", JoinKind.LeftOuter),
+    #"Expanded AuxPaso1" = Table.ExpandTableColumn(#"Merged Queries", "AuxPaso1", {"Totaling Type", "Value"}, {"AuxPaso1.Totaling Type", "AuxPaso1.Value"}),
+    #"Sorted Rows" = Table.Sort(#"Expanded AuxPaso1",{{"Line No_", Order.Ascending}}),
+    #"Merged Queries1" = Table.NestedJoin(#"Sorted Rows", {"AuxPaso1.Value"}, AuxPaso1, {"Row No_"}, "AuxPaso1", JoinKind.LeftOuter),
+    #"Expanded AuxPaso2" = Table.ExpandTableColumn(#"Merged Queries1", "AuxPaso1", {"Totaling Type", "Value"}, {"AuxPaso1.Totaling Type.1", "AuxPaso1.Value.1"}),
+    #"Merged Queries2" = Table.NestedJoin(#"Expanded AuxPaso2", {"AuxPaso1.Value.1"}, AuxPaso1, {"Row No_"}, "AuxPaso1", JoinKind.LeftOuter),
+    #"Expanded AuxPaso3" = Table.ExpandTableColumn(#"Merged Queries2", "AuxPaso1", {"Totaling Type", "Attribute", "Value"}, {"AuxPaso1.Totaling Type.2", "AuxPaso1.Attribute", "AuxPaso1.Value.2"}),
+    #"Removed Columns1" = Table.RemoveColumns(#"Expanded AuxPaso3",{"AuxPaso1.Totaling Type.1", "AuxPaso1.Totaling Type.2", "AuxPaso1.Totaling Type", "AuxPaso1.Attribute"}),
+    #"Unpivoted Other Columns1" = Table.UnpivotOtherColumns(#"Removed Columns1", {"Schedule Name", "Line No_", "Row No_", "Description", "Totaling Type"}, "Attribute.1", "Value.1"),
+    #"Removed Columns" = Table.RemoveColumns(#"Unpivoted Other Columns1",{"Attribute.1"}),
+    #"Added Custom" = Table.AddColumn(#"Removed Columns", "isNumeric", each try Number.From([Value.1]) otherwise "dropme"),
+    #"Filtered Rows1" = Table.SelectRows(#"Added Custom", each ([isNumeric] <> "dropme")),
+    #"Removed Duplicates" = Table.Distinct(#"Filtered Rows1"),
+    #"Renamed Columns" = Table.RenameColumns(#"Removed Duplicates",{{"isNumeric", "Cuenta"}}),
+    #"Removed Columns2" = Table.RemoveColumns(#"Renamed Columns",{"Value.1"}),
+    #"Changed Type" = Table.TransformColumnTypes(#"Removed Columns2",{{"Line No_", type text}}),
+    #"Added Custom1" = Table.AddColumn(#"Changed Type", "Key", each [Schedule Name]&"-"&[Line No_]),
+    #"Added Custom2" = Table.AddColumn(#"Added Custom1", "Custom", each Table.SelectRows(Account, (T) => Text.StartsWith(T[cta],[Cuenta])  )),
+    #"Expanded Custom" = Table.ExpandTableColumn(#"Added Custom2", "Custom", {"cta"}, {"Custom.cta"}),
+    #"Removed Columns3" = Table.RemoveColumns(#"Expanded Custom",{"Cuenta"}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Removed Columns3",{{"Custom.cta", "Cuenta"}})
+in
+    #"Renamed Columns1"
